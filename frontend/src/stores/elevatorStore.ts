@@ -20,7 +20,7 @@ import {
 } from '../utils/db';
 import type { ElevatorDraft, ElevatorView } from '../types/elevator';
 import { isPlanOverdue } from '../types/plan';
-import { overdueDaysOf } from '../types/rectify';
+import { pendingRectifyCountOf } from '../types/rectify';
 import { rescueMinutes } from '../utils/duration';
 import { nextPlanDate } from '../utils/cycle';
 import { nowDateTime } from '../utils/duration';
@@ -140,15 +140,16 @@ export const useElevatorStore = defineStore('elevator', () => {
     () => elevators.value.find((item) => item.id === activeElevatorId.value) ?? null,
   );
 
-  /** 电梯卡片视图：回显超期项与待整改数 */
+  /**
+   * 电梯卡片视图：回显超期项与待整改数。
+   * 待整改数按「该电梯全部未复核整改单」统计（不区分是否来自本次保养转整改、
+   * 也不要求限期已过），口径统一委托 pendingRectifyCountOf，避免只看来源漏掉旧单。
+   */
   const elevatorViews = computed<ElevatorView[]>(() =>
     elevators.value.map((elevator) => {
       const ownedPlans = plans.value.filter((item) => item.elevatorId === elevator.id);
       const overduePlanCount = ownedPlans.filter((item) => isPlanOverdue(item)).length;
-      const pendingRectifyCount = rectifies.value.filter((item) => {
-        if (item.elevatorId !== elevator.id) return false;
-        return item.state === 'pending' && overdueDaysOf(item.dueDate, item.state) >= 0;
-      }).length;
+      const pendingRectifyCount = pendingRectifyCountOf(rectifies.value, elevator.id);
       const ownedRescues = rescues.value
         .filter((item) => item.elevatorId === elevator.id)
         .sort((a, b) => b.alarmAt.localeCompare(a.alarmAt));
@@ -169,6 +170,7 @@ export const useElevatorStore = defineStore('elevator', () => {
     }),
   );
 
+  /** 全部电梯剩余未复核整改项总数（与卡片同一口径，只看是否未复核、不看来源/超期） */
   const pendingRectifyTotal = computed(
     () => rectifies.value.filter((item) => item.state === 'pending').length,
   );

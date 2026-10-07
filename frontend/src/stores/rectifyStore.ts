@@ -16,7 +16,9 @@ import {
   type RectifyRow,
 } from '../utils/db';
 import {
+  isRectifyPending,
   overdueDaysOf,
+  pendingRectifyCountOf,
   type RectifyDraft,
   type RectifyView,
 } from '../types/rectify';
@@ -130,7 +132,7 @@ export const useRectifyStore = defineStore('rectify', () => {
     let created = 0;
     for (const item of targets) {
       const exists = rectifies.value.some(
-        (row) => row.elevatorId === elevatorId && row.item === item.itemName && row.state === 'pending',
+        (row) => row.elevatorId === elevatorId && row.item === item.itemName && isRectifyPending(row.state),
       );
       if (exists) continue;
       await createRectify({ elevatorId, item: item.itemName, dueDate, reviewer });
@@ -139,7 +141,7 @@ export const useRectifyStore = defineStore('rectify', () => {
     return created;
   }
 
-  /** 整改单视图：附电梯上下文与超期天数 */
+  /** 整改单视图：附电梯上下文、超期天数与该电梯剩余未复核项数 */
   const rectifyViews = computed<RectifyView[]>(() =>
     rectifies.value.map((row) => {
       const elevator = elevators.value.find((item) => item.id === row.elevatorId);
@@ -150,11 +152,31 @@ export const useRectifyStore = defineStore('rectify', () => {
         owner: elevator?.owner ?? '-',
         overdue: days > 0,
         overdueDays: days,
+        remainingCount: pendingRectifyCountOf(rectifies.value, row.elevatorId),
       };
     }),
   );
 
-  const pendingViews = computed(() => rectifyViews.value.filter((item) => item.state === 'pending'));
+  const pendingViews = computed(() => rectifyViews.value.filter((item) => isRectifyPending(item.state)));
+
+  /**
+   * 每台电梯的「剩余未复核」整改项数。
+   * 口径与电梯档案完全一致：该电梯名下全部未复核单都计入，
+   * 不区分来源（手工登记 / 本次保养转来 / 无来源旧单），也不要求已超期。
+   * 复核、撤销复核、删除（移除）、换电梯（编辑电梯归属）后随 rectifies 重拉自动重算。
+   */
+  const pendingCountByElevator = computed(() => {
+    const map = new Map<string, number>();
+    for (const elevator of elevators.value) {
+      map.set(elevator.id, pendingRectifyCountOf(rectifies.value, elevator.id));
+    }
+    return map;
+  });
+
+  /** 某台电梯剩余未复核项数（电梯不存在或无未复核单均为 0） */
+  function pendingCountOfElevator(elevatorId: string): number {
+    return pendingCountByElevator.value.get(elevatorId) ?? pendingRectifyCountOf(rectifies.value, elevatorId);
+  }
   const overdueViews = computed(() =>
     rectifyViews.value
       .filter((item) => item.overdue)
@@ -173,7 +195,7 @@ export const useRectifyStore = defineStore('rectify', () => {
     for (const row of rectifyViews.value) {
       const bucket = buckets.get(row.owner) ?? { owner: row.owner, pending: 0, overdue: 0, total: 0 };
       bucket.total += 1;
-      if (row.state === 'pending') bucket.pending += 1;
+      if (isRectifyPending(row.state)) bucket.pending += 1;
       if (row.overdue) bucket.overdue += 1;
       buckets.set(row.owner, bucket);
     }
@@ -196,6 +218,8 @@ export const useRectifyStore = defineStore('rectify', () => {
     promoteAbnormalItems,
     rectifyViews,
     pendingViews,
+    pendingCountByElevator,
+    pendingCountOfElevator,
     overdueViews,
     reviewedViews,
     reviewRate,

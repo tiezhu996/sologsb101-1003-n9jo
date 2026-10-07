@@ -147,6 +147,12 @@ const rectifyColumns: DataTableColumns<RectifyView> = [
     width: 160,
     render: (row) => h(StateTag, { value: row.state, kind: 'rectify', overdue: row.overdue, overdueDays: row.overdueDays }),
   },
+  {
+    title: '剩余项',
+    key: 'remainingCount',
+    width: 90,
+    render: (row) => `${row.remainingCount} 项`,
+  },
   { title: '复核人', key: 'reviewer', width: 100 },
 ];
 

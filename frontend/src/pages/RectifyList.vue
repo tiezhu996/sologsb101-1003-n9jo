@@ -183,12 +183,22 @@ async function handleReset(): Promise<void> {
 }
 
 function exportOverdueCsv(): void {
-  const rows: Array<Array<string | number>> = [['电梯', '不合格项', '限期', '状态', '超期天数', '复核人']];
+  const rows: Array<Array<string | number>> = [
+    ['电梯', '不合格项', '限期', '状态', '超期天数', '剩余未复核项', '复核人'],
+  ];
   for (const row of rectifyStore.rectifyViews) {
-    rows.push([row.elevatorName, row.item, row.dueDate, RECTIFY_STATE_LABEL[row.state], row.overdueDays, row.reviewer]);
+    rows.push([
+      row.elevatorName,
+      row.item,
+      row.dueDate,
+      RECTIFY_STATE_LABEL[row.state],
+      row.overdueDays,
+      row.remainingCount,
+      row.reviewer,
+    ]);
   }
   downloadCsv(`gbelevsvc-rectify-${todayDate()}.csv`, rows);
-  message.success('整改清单已导出 CSV');
+  message.success('整改清单已导出 CSV（含各电梯剩余未复核项）');
 }
 
 const columns = computed<DataTableColumns<RectifyView>>(() => [
@@ -200,6 +210,17 @@ const columns = computed<DataTableColumns<RectifyView>>(() => [
     key: 'state',
     width: 190,
     render: (row) => h(StateTag, { value: row.state, kind: 'rectify', overdue: row.overdue, overdueDays: row.overdueDays }),
+  },
+  {
+    title: '该电梯剩余项',
+    key: 'remainingCount',
+    width: 110,
+    render: (row) =>
+      h(
+        NTag,
+        { size: 'small', round: true, type: row.remainingCount > 0 ? 'warning' : 'success' },
+        { default: () => `${row.remainingCount} 项` },
+      ),
   },
   { title: '复核人', key: 'reviewer', width: 100 },
   {
@@ -366,7 +387,7 @@ const columns = computed<DataTableColumns<RectifyView>>(() => [
             :data="filtered"
             :bordered="false"
             size="small"
-            :scroll-x="1160"
+            :scroll-x="1280"
             :pagination="{ pageSize: 9 }"
             :row-class-name="(row: RectifyView) => (row.overdue ? 'row-marked' : '')"
           />

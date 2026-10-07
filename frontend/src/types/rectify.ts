@@ -42,6 +42,8 @@ export interface RectifyView extends Rectify {
   overdue: boolean;
   /** 超期天数（未超期为 0） */
   overdueDays: number;
+  /** 所属电梯剩余未复核整改项数（本单同电梯的全部未复核单，含本单 pending 时） */
+  remainingCount: number;
 }
 
 /** 年检不合格项字典 */
@@ -64,4 +66,26 @@ export function overdueDaysOf(dueDate: string, state: RectifyState, now: Date = 
   const diff = now.getTime() - due.getTime();
   if (diff <= 0) return 0;
   return Math.ceil(diff / (24 * 3600 * 1000));
+}
+
+/** 是否为未复核（待整改）状态 */
+export function isRectifyPending(state: RectifyState): boolean {
+  return state === 'pending';
+}
+
+/**
+ * 电梯状态判定的唯一口径：
+ * 统计该电梯名下「全部未复核」整改单数量——与本次转整改的来源（保养异常项）无关。
+ *
+ * 不能只看本次从保养项转来的那批单据：手工登记、历史播种或早期没有来源链接的旧单
+ * 同样约束电梯状态；只看来源会漏掉这些旧单，使电梯错误显示为正常。
+ * 限期未到（未超期）的未复核单同样计入，超期与否只影响预警、不影响电梯待整改状态。
+ */
+export function pendingRectifyCountOf<TRectify extends Pick<Rectify, 'elevatorId' | 'state'>>(
+  rectifies: TRectify[],
+  elevatorId: string,
+): number {
+  return rectifies.filter(
+    (item) => item.elevatorId === elevatorId && isRectifyPending(item.state),
+  ).length;
 }
