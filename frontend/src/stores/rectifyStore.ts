@@ -17,6 +17,8 @@ import {
 } from '../utils/db';
 import {
   overdueDaysOf,
+  pendingRectifyCountOf,
+  rectifySourceLabel,
   type RectifyDraft,
   type RectifyView,
 } from '../types/rectify';
@@ -57,7 +59,10 @@ export const useRectifyStore = defineStore('rectify', () => {
     await load();
   }
 
-  async function createRectify(draft: RectifyDraft): Promise<RectifyRow> {
+  async function createRectify(
+    draft: RectifyDraft,
+    source: { planId?: string | null; itemId?: string | null } = {},
+  ): Promise<RectifyRow> {
     const row: RectifyRow = {
       id: uuid(),
       elevatorId: draft.elevatorId,
@@ -66,6 +71,9 @@ export const useRectifyStore = defineStore('rectify', () => {
       state: 'pending',
       reviewer: draft.reviewer.trim(),
       reviewedAt: null,
+      // 仅异常项一键转整改带来源；手工登记单为 null。来源只用于追溯，不参与状态判定。
+      sourcePlanId: source.planId ?? null,
+      sourceItemId: source.itemId ?? null,
       createdAt: nowDateTime(),
       revision: ROW_REVISION,
     };
@@ -133,13 +141,16 @@ export const useRectifyStore = defineStore('rectify', () => {
         (row) => row.elevatorId === elevatorId && row.item === item.itemName && row.state === 'pending',
       );
       if (exists) continue;
-      await createRectify({ elevatorId, item: item.itemName, dueDate, reviewer });
+      await createRectify(
+        { elevatorId, item: item.itemName, dueDate, reviewer },
+        { planId, itemId: item.id },
+      );
       created += 1;
     }
     return created;
   }
 
-  /** 整改单视图：附电梯上下文与超期天数 */
+  /** 整改单视图：附电梯上下文、超期天数与来源标签 */
   const rectifyViews = computed<RectifyView[]>(() =>
     rectifies.value.map((row) => {
       const elevator = elevators.value.find((item) => item.id === row.elevatorId);
@@ -150,9 +161,28 @@ export const useRectifyStore = defineStore('rectify', () => {
         owner: elevator?.owner ?? '-',
         overdue: days > 0,
         overdueDays: days,
+        sourceLabel: rectifySourceLabel(row),
       };
     }),
   );
+
+  /**
+   * 每台电梯的剩余未复核项数（电梯 ID → 数量）。
+   * 口径：该电梯「全部」state=pending 的整改单，包含无来源的手工 / 历史旧单。
+   * 复核、撤销复核、移除、编辑换电梯都会触发重新拉取，此派生值随之重算。
+   */
+  const pendingCountByElevator = computed<Map<string, number>>(() => {
+    const map = new Map<string, number>();
+    for (const elevator of elevators.value) {
+      map.set(elevator.id, pendingRectifyCountOf(rectifies.value, elevator.id));
+    }
+    return map;
+  });
+
+  /** 查询单台电梯的剩余未复核项数（旧单 / 无来源单一并计入） */
+  function pendingCountOfElevator(elevatorId: string): number {
+    return pendingCountByElevator.value.get(elevatorId) ?? pendingRectifyCountOf(rectifies.value, elevatorId);
+  }
 
   const pendingViews = computed(() => rectifyViews.value.filter((item) => item.state === 'pending'));
   const overdueViews = computed(() =>
@@ -200,5 +230,7 @@ export const useRectifyStore = defineStore('rectify', () => {
     reviewedViews,
     reviewRate,
     byOwner,
+    pendingCountByElevator,
+    pendingCountOfElevator,
   };
 });

@@ -20,7 +20,7 @@ import { nowDateTime, rescueMinutes, todayDate } from './duration';
 export const DB_NAME = 'gbelevsvc';
 
 /** 当前数据结构版本号（每次调整字段结构必须 +1 并补迁移） */
-export const DB_SCHEMA_VERSION = 2;
+export const DB_SCHEMA_VERSION = 3;
 
 export { ROW_REVISION };
 export type { Revisioned };
@@ -88,6 +88,25 @@ class ElevatorServiceDatabase extends Dexie {
           if (row.result === undefined) row.result = null;
         });
       });
+
+    // v3：整改单增加来源字段（sourcePlanId / sourceItemId）。
+    //     历史单与手工登记单没有来源，统一补 null——它们仍计入电梯的未复核统计，
+    //     电梯状态只按「全部未复核单」判定，不依赖来源。
+    this.version(DB_SCHEMA_VERSION)
+      .stores({
+        elevators: 'id, regCode, owner, maintCycle, useDate',
+        plans: 'id, elevatorId, cycleType, state, planDate, executor, [elevatorId+planDate]',
+        checkItems: 'id, planId, seq, result, itemName, [planId+seq]',
+        rescues: 'id, elevatorId, alarmAt, responder',
+        rectifies: 'id, elevatorId, state, dueDate, reviewer, sourcePlanId',
+        settings: 'id',
+      })
+      .upgrade(async (tx) => {
+        await tx.table('rectifies').toCollection().modify((row: Record<string, unknown>) => {
+          if (typeof row.sourcePlanId !== 'string') row.sourcePlanId = null;
+          if (typeof row.sourceItemId !== 'string') row.sourceItemId = null;
+        });
+      });
   }
 }
 
@@ -122,7 +141,15 @@ interface SeedElevatorSpec {
     trappedCount: number;
     responder: string;
   }>;
-  rectifies: Array<{ item: string; dueOffsetDays: number; state: Rectify['state']; reviewer: string }>;
+  rectifies: Array<{
+    item: string;
+    dueOffsetDays: number;
+    state: Rectify['state'];
+    reviewer: string;
+    /** 来源保养计划 / 保养项（缺省为无来源的手工 / 历史单） */
+    sourcePlanId?: string;
+    sourceItemId?: string;
+  }>;
 }
 
 const SEED_ELEVATORS: SeedElevatorSpec[] = [
@@ -160,8 +187,18 @@ const SEED_ELEVATORS: SeedElevatorSpec[] = [
       },
     ],
     rectifies: [
+      // 两条无来源旧单（手工 / 历史登记）：即使没有来源，也必须计入该电梯的未复核统计
       { item: '层门门锁啮合深度不足', dueOffsetDays: -5, state: 'pending', reviewer: '王敏' },
       { item: '轿厢应急照明失效', dueOffsetDays: 12, state: 'pending', reviewer: '王敏' },
+      // 一条由已签署计划 plan-1-2 的第 3 项异常（限速器动作）转来的有来源单
+      {
+        item: '限速器动作',
+        dueOffsetDays: 9,
+        state: 'pending',
+        reviewer: '王敏',
+        sourcePlanId: 'plan-1-2',
+        sourceItemId: 'chk-plan-1-2-3',
+      },
     ],
   },
   {
@@ -324,6 +361,8 @@ async function seedDatabase(): Promise<void> {
         state: rectifySpec.state,
         reviewer: rectifySpec.reviewer,
         reviewedAt: rectifySpec.state === 'reviewed' ? `${addDays(todayDate(), -3)} 10:30` : null,
+        sourcePlanId: rectifySpec.sourcePlanId ?? null,
+        sourceItemId: rectifySpec.sourceItemId ?? null,
         createdAt: stamp,
         revision: ROW_REVISION,
       });
@@ -510,7 +549,14 @@ export async function importSnapshot(snapshot: DatabaseSnapshot): Promise<void> 
       await db.plans.bulkPut(snapshot.plans ?? []);
       await db.checkItems.bulkPut(snapshot.checkItems ?? []);
       await db.rescues.bulkPut(snapshot.rescues ?? []);
-      await db.rectifies.bulkPut(snapshot.rectifies ?? []);
+      // 兼容旧版备份：缺少来源字段时补 null（无来源旧单同样计入未复核统计）
+      await db.rectifies.bulkPut(
+        (snapshot.rectifies ?? []).map((rectify) => ({
+          ...rectify,
+          sourcePlanId: typeof rectify.sourcePlanId === 'string' ? rectify.sourcePlanId : null,
+          sourceItemId: typeof rectify.sourceItemId === 'string' ? rectify.sourceItemId : null,
+        })),
+      );
     },
   );
 }

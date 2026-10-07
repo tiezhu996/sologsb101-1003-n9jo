@@ -183,23 +183,58 @@ async function handleReset(): Promise<void> {
 }
 
 function exportOverdueCsv(): void {
-  const rows: Array<Array<string | number>> = [['电梯', '不合格项', '限期', '状态', '超期天数', '复核人']];
+  const rows: Array<Array<string | number>> = [
+    ['电梯', '不合格项', '限期', '状态', '超期天数', '复核人', '来源', '本梯剩余未复核项'],
+  ];
   for (const row of rectifyStore.rectifyViews) {
-    rows.push([row.elevatorName, row.item, row.dueDate, RECTIFY_STATE_LABEL[row.state], row.overdueDays, row.reviewer]);
+    rows.push([
+      row.elevatorName,
+      row.item,
+      row.dueDate,
+      RECTIFY_STATE_LABEL[row.state],
+      row.overdueDays,
+      row.reviewer,
+      row.sourceLabel,
+      rectifyStore.pendingCountOfElevator(row.elevatorId),
+    ]);
   }
   downloadCsv(`gbelevsvc-rectify-${todayDate()}.csv`, rows);
-  message.success('整改清单已导出 CSV');
+  message.success('整改清单已导出 CSV（含来源与各电梯剩余未复核项）');
 }
 
 const columns = computed<DataTableColumns<RectifyView>>(() => [
   { title: '电梯', key: 'elevatorName', minWidth: 210, ellipsis: { tooltip: true } },
   { title: '不合格项', key: 'item', minWidth: 180 },
+  {
+    title: '来源',
+    key: 'sourceLabel',
+    width: 120,
+    render: (row) =>
+      h(NTag, { size: 'small', round: true, type: row.sourcePlanId ? 'info' : 'default', bordered: false }, { default: () => row.sourceLabel }),
+  },
   { title: '限期', key: 'dueDate', width: 120 },
   {
     title: '状态',
     key: 'state',
     width: 190,
     render: (row) => h(StateTag, { value: row.state, kind: 'rectify', overdue: row.overdue, overdueDays: row.overdueDays }),
+  },
+  {
+    title: '本梯剩余项',
+    key: 'elevatorPending',
+    width: 110,
+    align: 'center',
+    render: (row) =>
+      h(
+        NTag,
+        {
+          size: 'small',
+          round: true,
+          type: rectifyStore.pendingCountOfElevator(row.elevatorId) > 0 ? 'warning' : 'success',
+          bordered: false,
+        },
+        { default: () => `${rectifyStore.pendingCountOfElevator(row.elevatorId)} 项` },
+      ),
   },
   { title: '复核人', key: 'reviewer', width: 100 },
   {
@@ -299,7 +334,7 @@ const columns = computed<DataTableColumns<RectifyView>>(() => [
         :value="rectifyStore.pendingViews.length"
         suffix="条"
         color="#f0a020"
-        hint="未复核关闭的整改项"
+        hint="全部未复核单（含无来源的手工 / 历史旧单）"
       />
       <stat-badge
         title="超期预警"
@@ -366,7 +401,7 @@ const columns = computed<DataTableColumns<RectifyView>>(() => [
             :data="filtered"
             :bordered="false"
             size="small"
-            :scroll-x="1160"
+            :scroll-x="1390"
             :pagination="{ pageSize: 9 }"
             :row-class-name="(row: RectifyView) => (row.overdue ? 'row-marked' : '')"
           />

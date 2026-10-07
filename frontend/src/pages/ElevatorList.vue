@@ -140,6 +140,13 @@ const detailRescues = computed(() =>
 
 const rectifyColumns: DataTableColumns<RectifyView> = [
   { title: '不合格项', key: 'item', minWidth: 180 },
+  {
+    title: '来源',
+    key: 'sourceLabel',
+    width: 120,
+    render: (row) =>
+      h(NTag, { size: 'small', round: true, type: row.sourcePlanId ? 'info' : 'default', bordered: false }, { default: () => row.sourceLabel }),
+  },
   { title: '限期', key: 'dueDate', width: 120 },
   {
     title: '状态',
@@ -354,7 +361,7 @@ const rescueColumns: DataTableColumns<(typeof elevatorStore.rescues)[number]> = 
 
           <div class="hint" style="margin-top: 8px">
             下次保养 {{ item.nextPlanDate }} ·
-            {{ remindState(item.useDate, item.maintCycle).text }} · 待整改 {{ item.pendingRectifyCount }} 项
+            {{ remindState(item.useDate, item.maintCycle).text }} · 剩余未复核 {{ item.pendingRectifyCount }} 项
           </div>
           <div class="hint">
             最近救援：
@@ -480,7 +487,7 @@ const rescueColumns: DataTableColumns<(typeof elevatorStore.rescues)[number]> = 
           </n-gi>
           <n-gi>
             <stat-badge
-              title="待整改"
+              title="剩余未复核"
               :value="detailElevator.pendingRectifyCount"
               suffix="项"
               inline
@@ -524,7 +531,10 @@ const rescueColumns: DataTableColumns<(typeof elevatorStore.rescues)[number]> = 
 
         <n-grid :cols="2" :x-gap="12">
           <n-gi>
-            <n-card size="small" title="整改单">
+            <n-card
+              size="small"
+              :title="`整改单（剩余未复核 ${detailElevator.pendingRectifyCount} 项，共 ${detailRectifies.length} 条）`"
+            >
               <n-data-table
                 :columns="rectifyColumns"
                 :data="detailRectifies"

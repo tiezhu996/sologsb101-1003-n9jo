@@ -20,7 +20,7 @@ import {
 } from '../utils/db';
 import type { ElevatorDraft, ElevatorView } from '../types/elevator';
 import { isPlanOverdue } from '../types/plan';
-import { overdueDaysOf } from '../types/rectify';
+import { isPendingRectify, pendingRectifyCountOf } from '../types/rectify';
 import { rescueMinutes } from '../utils/duration';
 import { nextPlanDate } from '../utils/cycle';
 import { nowDateTime } from '../utils/duration';
@@ -145,10 +145,9 @@ export const useElevatorStore = defineStore('elevator', () => {
     elevators.value.map((elevator) => {
       const ownedPlans = plans.value.filter((item) => item.elevatorId === elevator.id);
       const overduePlanCount = ownedPlans.filter((item) => isPlanOverdue(item)).length;
-      const pendingRectifyCount = rectifies.value.filter((item) => {
-        if (item.elevatorId !== elevator.id) return false;
-        return item.state === 'pending' && overdueDaysOf(item.dueDate, item.state) >= 0;
-      }).length;
+      // 电梯是否待整改只看「该电梯全部未复核单」，与来源（本次异常转来 / 旧单）无关，
+      // 也不看限期是否已到；否则只按来源统计会漏掉无来源旧单，令电梯错误显示正常。
+      const pendingRectifyCount = pendingRectifyCountOf(rectifies.value, elevator.id);
       const ownedRescues = rescues.value
         .filter((item) => item.elevatorId === elevator.id)
         .sort((a, b) => b.alarmAt.localeCompare(a.alarmAt));
@@ -169,9 +168,8 @@ export const useElevatorStore = defineStore('elevator', () => {
     }),
   );
 
-  const pendingRectifyTotal = computed(
-    () => rectifies.value.filter((item) => item.state === 'pending').length,
-  );
+  /** 全部电梯剩余未复核整改项总数（与来源无关，旧单一并计入） */
+  const pendingRectifyTotal = computed(() => rectifies.value.filter(isPendingRectify).length);
 
   return {
     elevators,

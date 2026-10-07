@@ -43,7 +43,7 @@ export interface ElevatorView extends Elevator {
   planCount: number;
   /** 逾期未签署计划数 */
   overduePlanCount: number;
-  /** 待整改数量 */
+  /** 剩余未复核整改项数量（该电梯全部未复核单，含无来源旧单；与限期、来源无关） */
   pendingRectifyCount: number;
   /** 最近一次困人救援时长（分钟），无记录为 null */
   lastRescueMinutes: number | null;

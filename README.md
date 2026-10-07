@@ -27,6 +27,7 @@ docker compose up -d --build # 代码改动后重建
 - 按周期批量生成保养计划、指派执行人、跟踪逾期
 - 逐项填写实测值与结果（正常 / 异常 / 建议）并签署，签署时校验未填项
 - 异常项一键转年检整改单，复核通过后关闭
+- 电梯是否标为「待整改」按该电梯**全部未复核整改单**统计（与来源无关）：异常项转来的单记录来源 `sourcePlanId / sourceItemId`，手工登记与历史旧单无来源也同样计入；只看本次转来的来源会漏掉旧单、令电梯错误显示正常。复核 / 撤销复核 / 移除 / 编辑换电梯后均自动重算
 - 录入困人救援的报警 / 到场 / 救出时间，自动计算到场与救援时长并按 30 分钟到场要求判定
 - 整库 JSON 导出 / 导入与 IndexedDB 结构版本查看
 
@@ -90,7 +91,7 @@ sologsb101-1003/
 ## 六、数据存储说明
 
 - **存储介质**：浏览器 IndexedDB，库名 **`gbelevsvc`**，通过 Dexie 4.x 封装。
-- **数据结构版本**：`utils/db.ts` 中 `DB_SCHEMA_VERSION = 2`，并登记 v1 → v2 的 `upgrade` 迁移（补齐行修订号、迁移 `executorName → executor`、初始化保养项结果字段、新增 `settings` 表）。
+- **数据结构版本**：`utils/db.ts` 中 `DB_SCHEMA_VERSION = 3`，并登记 v1 → v2、v2 → v3 的 `upgrade` 迁移（补齐行修订号、迁移 `executorName → executor`、初始化保养项结果字段、新增 `settings` 表；整改单补来源字段 `sourcePlanId / sourceItemId`，无来源旧单仍计入电梯未复核统计）。
 - **数据表**：
 
   | 表名 | 实体 | 主要索引 |
@@ -102,7 +103,7 @@ sologsb101-1003/
   | `rectifies` | 整改单 | id / elevatorId / state / dueDate / reviewer |
   | `settings` | 自定义字典 | id |
 
-- **首屏自动播种**：`initDatabase()` 在 `elevators` 表为空时写入演示数据（幂等）——3 台电梯 × 各 2~4 期计划 × 每期 5~10 个保养项（含异常 / 建议项）+ 3 起困人事件 + 5 条整改单，父子记录通过 `elevatorId / planId` 互相引用。
+- **首屏自动播种**：`initDatabase()` 在 `elevators` 表为空时写入演示数据（幂等）——3 台电梯 × 各 2~4 期计划 × 每期 5~10 个保养项（含异常 / 建议项）+ 3 起困人事件 + 6 条整改单（含由保养异常项转来的有来源单与无来源的手工 / 历史旧单），父子记录通过 `elevatorId / planId / sourcePlanId` 互相引用。
 - **跨页状态**：全部放在 Pinia store（`elevatorStore / planStore / checkStore / rescueStore / rectifyStore`），页面只读 store；Dexie 写入后由 `utils/events.ts` 广播，各 store 自动重新拉取。
 - **数据不出浏览器**：容器无状态，不挂载卷、不使用数据库服务。
 
